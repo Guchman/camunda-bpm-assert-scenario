@@ -7,10 +7,6 @@ import org.camunda.bpm.scenario.ProcessScenario;
 import org.camunda.bpm.scenario.Scenario;
 import org.camunda.bpm.scenario.delegate.EventSubscriptionDelegate;
 import org.camunda.bpm.scenario.delegate.ExternalTaskDelegate;
-import org.mockito.Mockito;
-
-import java.util.HashMap;
-import java.util.Map;
 
 import static org.camunda.bpm.engine.test.assertions.ProcessEngineTests.*;
 import static org.mockito.Mockito.*;
@@ -20,72 +16,75 @@ import static org.mockito.Mockito.*;
  */
 public class PaymentRetrievalSteps implements En {
 
-    private ProcessScenario paymentRetrieval;
+    private CustomerAccount customerAccount;
+    private Integer paymentAmount;
 
-    private Map<String, Object> initialVariables;
-
+    private ProcessScenario paymentRetrieval = mock(ProcessScenario.class);;
     private ProcessInstance instance;
 
     public PaymentRetrievalSteps() {
 
-        Given("The customer has a start balance of (\\d+)", (Integer startBalance) -> {
-            initialVariables.put("balance", startBalance);
+        // step definitions for cucumber
+
+        Given("the customer has an account balance of (\\d+)", (Integer startBalance) -> {
+            customerAccount = new CustomerAccount(startBalance);
         });
 
-        Given("A payment of (\\d+) is required", (Integer paymentAmount) -> {
-            initialVariables.put("paymentAmount", paymentAmount);
+        Given("a payment of (\\d+) is required", (Integer paymentAmount) -> {
+            this.paymentAmount = paymentAmount;
         });
 
-        Given("The customer's credit card is already expired", () -> {
+        Given("the customer's credit card already expired", () -> {
             when(paymentRetrieval.waitsAtServiceTask("chargeCard")).thenReturn((task) -> {
                 task.handleBpmnError("creditCardExpired");
             }).thenReturn(ExternalTaskDelegate::complete);
         });
 
-        Given("The customer does not update his credit card info in due time", () -> {
+        Given("the customer does not update his credit card for (\\d+) days and (\\d+) hours", (Integer days, Integer hours) -> {
             when(paymentRetrieval.waitsAtReceiveTask("updateCard")).thenReturn((task) -> {
-                task.defer("P14D", task::receive);
+                task.defer("P" + days + "DT" + hours + "H", task::receive);
             });
         });
 
-        When("We walk the customer through the payment retrieval process", () -> {
-            Scenario scenario = Scenario.run(paymentRetrieval).startByKey("paymentRetrieval", initialVariables).execute();
+        When("we walk the customer through the payment retrieval", () -> {
+            Scenario scenario = Scenario.run(paymentRetrieval)
+                    .startByKey("paymentRetrieval",
+                            withVariables("paymentAmount", paymentAmount))
+                    .execute();
             instance = scenario.instance(paymentRetrieval);
         });
 
-        Then("The payment retrieval is successful: (true|false)", (Boolean paymentSuccessful) -> {
-            assertThat(instance).hasPassed(paymentSuccessful ? "paymentReceived" : "paymentFailed");
+        Then("the payment retrieval is (successful|not\\ssuccessful)", (String paymentSuccessful) -> {
+            assertThat(instance)
+                    .hasPassed(paymentSuccessful.equals("successful") ? "paymentReceived" : "paymentFailed");
         });
 
-        Given("The customer has a final balance of (\\d+)", (Integer finalBalance) -> {
-            assertThat(instance).variables().containsEntry("balance", finalBalance);
+        Given("the customer has a final balance of (\\d+)", (Integer finalBalance) -> {
+            assertThat(customerAccount.getBalance())
+                    .isEqualTo(finalBalance);
         });
 
     }
 
     {
 
-        init(TestHelper.getProcessEngine("camunda.cfg.xml"));
+        // quick'n'dirty ramp up of engine - should be refactored when doing more
 
-        repositoryService()
-                .createDeployment()
+        init(TestHelper.getProcessEngine("cucumber.cfg.xml"));
+
+        repositoryService().createDeployment()
                 .addClasspathResource("org/camunda/bpm/scenario/examples/paymentretrieval/PaymentRetrieval.bpmn")
                 .deploy();
 
-        initialVariables = new HashMap<>();
-
-        paymentRetrieval = Mockito.mock(ProcessScenario.class);
+        // defining default behaviour for all steps / waitstates enables us to only declare
+        // interesting steps differing from the normal in the feature files. Furthermore,
+        // changing the process in a "backwards compatible" way - e.g. by adding more nodes
+        // typically won't break existing feature scenarios.
 
         when(paymentRetrieval.waitsAtServiceTask("useCredit")).thenReturn((task) -> {
-
-            Integer balance = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "balance");
-            Integer paymentAmount = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "paymentAmount");
-
-            Integer chargeAmount = balance - paymentAmount < 0 ? paymentAmount - balance : 0;
-            Integer newBalance = balance - paymentAmount + chargeAmount;
-
-            task.complete(withVariables("chargeAmount", chargeAmount, "balance", newBalance));
-
+            int paymentAmount = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "paymentAmount");
+            int withdrawAmount = customerAccount.withdraw(paymentAmount);
+            task.complete(withVariables("chargeAmount", paymentAmount - withdrawAmount));
         });
 
         when(paymentRetrieval.waitsAtServiceTask("chargeCard")).thenReturn(ExternalTaskDelegate::complete);
@@ -93,14 +92,10 @@ public class PaymentRetrievalSteps implements En {
         when(paymentRetrieval.waitsAtReceiveTask("updateCard")).thenReturn(EventSubscriptionDelegate::receive);
 
         when(paymentRetrieval.waitsAtServiceTask("restoreCredit")).thenReturn((task) -> {
-
-            Integer paymentAmount = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "paymentAmount");
-            Integer chargeAmount = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "chargeAmount");
-
-            Integer newBalance = paymentAmount - chargeAmount;
-
-            task.complete(withVariables("balance", newBalance));
-
+            int paymentAmount = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "paymentAmount");
+            int chargeAmount = (Integer) runtimeService().getVariable(task.getProcessInstanceId(), "chargeAmount");
+            customerAccount.deposit(paymentAmount - chargeAmount);
+            task.complete();
         });
 
     }
