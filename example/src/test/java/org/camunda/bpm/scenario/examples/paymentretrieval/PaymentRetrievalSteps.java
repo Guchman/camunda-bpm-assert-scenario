@@ -54,9 +54,9 @@ public class PaymentRetrievalSteps implements En {
             instance = scenario.instance(paymentRetrieval);
         });
 
-        Then("the payment retrieval is (successful|not\\ssuccessful)", (String paymentSuccessful) -> {
+        Then("the payment retrieval (is|is\\snot) successful", (String paymentSuccessful) -> {
             assertThat(instance)
-                    .hasPassed(paymentSuccessful.equals("successful") ? "paymentReceived" : "paymentFailed");
+                    .hasPassed(paymentSuccessful.equals("is") ? "paymentReceived" : "paymentFailed");
         });
 
         Given("the customer has a final balance of (\\d+)", (Integer finalBalance) -> {
