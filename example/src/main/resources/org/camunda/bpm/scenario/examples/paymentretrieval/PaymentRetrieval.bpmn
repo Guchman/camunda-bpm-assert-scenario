@@ -28,7 +28,7 @@
     <bpmn:boundaryEvent id="BoundaryEvent_01wznju" name="Two weeks" attachedToRef="updateCard">
       <bpmn:outgoing>SequenceFlow_1gyosdo</bpmn:outgoing>
       <bpmn:timerEventDefinition>
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">P7D</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">P14D</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:boundaryEvent>
     <bpmn:sequenceFlow id="SequenceFlow_1gyosdo" sourceRef="BoundaryEvent_01wznju" targetRef="paymentFailed" />
